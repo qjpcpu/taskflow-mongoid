@@ -1,8 +1,6 @@
 # Taskflow
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/taskflow`. To experiment with that code, run `bin/console` for an interactive prompt.
-
-TODO: Delete this and the text above, and describe your gem
+Taskflow is a cool rails plugin for creating and schedule task flows. NOTE: taskflow is based sidekiq, and use ActiveRecord/Mongoid as its database adapter, choose the right gem(another version taskflow is also in my github) for your project.
 
 ## Installation
 
@@ -22,7 +20,8 @@ Or install it yourself as:
 
 ## Usage
 
-example:
+Let's see an example first, the 'PlayFlow' has 7 task in total. When we start the flow, the t1(PendingTask) runs first, after t1 finishes, t2,t3,t4 would run in parallel; When t4 is done, the t5(OkTask) begins, when t2,t3,t5 are all done, the SummaryTask start to run, then run the last OkTask.
+
 ```ruby
 class PlayFlow < Taskflow::Flow
     NAME = "Play FLow"
@@ -139,6 +138,122 @@ Taskflow::Worker JID-7163d1fa16a685d016642a6b INFO: done: 0.03 sec
 Taskflow::Worker JID-d7d0c92da5ab820bc1f66651 INFO: start
 Taskflow::Worker JID-d7d0c92da5ab820bc1f66651 INFO: finished-task finished
 Taskflow::Worker JID-d7d0c92da5ab820bc1f66651 INFO: done: 0.021 sec
+```
+
+
+## Documentations
+### the Taskflow::Flow
+First, you should create your taskflow by inherit `Taskflow::Flow`, and you *must implement the `configure` method* to tell taskflow engine the detail info.
+
+In `configure` method, you can use the keyword `run` to define task:
+
+```ruby
+# the keyword run
+run Task_Class, name: 'task_name'
+# task1 would run before another_task_obj
+run Task_Class, name: 'task1',:before=>another_task_obj
+# task2 would run after another_task_obj
+run Task_Class, name: 'task2',:after=>another_task_obj
+# the wait_task would run after task3,task4,task5 all done
+run Task_Class, name: 'wait_task',:after=>[task3,task4,task5]
+# pass some parameter to task, the params would set as task's input
+run Task_Class, name: 'params_task',params: { :param1=>'abc' }
+```
+
+You can use `after` or `before` to specify the schedule order for certain task, if there's no after or before, the current task would just run after the previous task.
+
+#### 1. launch taskflow
+```ruby
+# the params would be set as taskflow's input field
+Taskflow::Flow.launch 'PlayFlow',:params=>{word: 'hello'},:launched_by=>'Jason',:workflow_description=>'description'
+# check whether can launch taskflow, if there's already a taskflow which has the some taskflow_klass and params, return false
+Taskflow::Flow.can_launch? 'PlayFlow',:params=>{word: 'hello'},:launched_by=>'Jason',:workflow_description=>'description'
+```
+
+#### 2. taskflow control
+```ruby
+# Taskflow::Flow#stop! stop taskflow
+flow.stop!
+flow.stop! 'tom' # => stopped by tom
+# Taskflow::Flow#resume, resume paused flow
+flow.resume
+```
+
+### the Taskflow::Task
+Define your own taskflow task. Inherit the class `Taskflow::Task`, and *implement go method*.
+
+```ruby
+def go(logger)
+# write your task code here
+end
+```
+
+#### 1.Sidekiq logger
+the parameter `logger` of `Taskflow::Task#go` is sidekiq logger, so you can use it to log to sidekiq log file for debug.
+
+#### 2.taskflow logger
+There's another logger in `Taskflow::Task#go` : `tflogger`, `tflogger` can write log information to database. for example:
+
+```ruby
+def go(logger)
+  tflogger.info 'the info message would write to database'
+  tflogger.error 'this error message would write to database,too'
+end
+```
+
+#### 3. input & output
+There's a very cool feature. Every task has its own `input` and `ouput`.
+```ruby
+def go(logger)
+  puts input # => the input hash
+  puts input[:some_key] # => get the input value of the key 'some_key'
+  puts upstream.first.ouput # => get the first upstream's ouput, also is a hash
+end
+```
+
+You have the `set/append_xxx` to modify the input and output.
+```ruby
+def go(log)
+  set_output :some_key=>'value' # => set the output to { :some_key=> 'value'}
+  append_output :some_key2=>'value2' # => add { :some_key2=>'value2' } to output
+end
+```
+
+#### 4. data
+Every task has its own data. After the task is done, the data would be cleanned.
+```ruby
+def go(log)
+  puts data # => print data
+  puts data[:key] # => access data
+  set_data :key=>'value'
+  append_data :key=>'value'
+end
+```
+
+#### 5. relationship
+In the task, you can access its upstream and downstream.
+```ruby
+def go(log)
+  upstream.each{|task| puts task.name }
+  upstream.each{|task| puts task.output }
+  puts downstream.first.name
+end
+```
+
+#### 6. task control
+```ruby
+task.resume # => resume paused task
+task.wakeup(hash_data) # => wakeup suspend task with some hash data
+task.wakeup # => just wakeup
+task.skip # => skip paused task
+```
+And, in `Taskflow::Task#go`, you can use keyword `suspend` to suspend current task, then the task result would convert to `suspend`,state would be `paused`.
+```ruby
+def go(log)
+  log.info 'before suspend'
+  suspend  # => the task would be suspend right now.
+  log.info 'never print me'
+end
 ```
 
 ## Development
