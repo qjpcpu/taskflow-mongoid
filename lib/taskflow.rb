@@ -8,17 +8,13 @@ require 'taskflow/record'
 
 module Taskflow
 
-    DEFAULTS = { :retry=>false }
-
-    def self.worker_options
-        @options ||= DEFAULTS.dup
-    end
-
     def self.worker_options=(opts)
-        @options = opts.merge DEFAULTS.dup
+        orig = HashWithIndifferentAccess.new(Worker.sidekiq_options_hash || {})
+        Worker.sidekiq_options_hash = orig.merge(opts).merge(retry: false)
     end
     
     def self.configure
         yield self
     end
 end
+
