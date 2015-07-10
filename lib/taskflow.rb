@@ -7,5 +7,18 @@ require 'taskflow/logger'
 require 'taskflow/record'
 
 module Taskflow
-    # Your code goes here...
+
+    DEFAULTS = { :retry=>false }
+
+    def self.worker_options
+        @options ||= DEFAULTS.dup
+    end
+
+    def self.worker_options=(opts)
+        @options = opts.merge DEFAULTS.dup
+    end
+    
+    def self.configure
+        yield self
+    end
 end
