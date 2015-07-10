@@ -166,6 +166,14 @@ run Task_Class, name: 'params_task',params: { :param1=>'abc' }
 
 You can use `after` or `before` to specify the schedule order for certain task, if there's no after or before, the current task would just run after the previous task.
 
+#### 0. config taskflow
+You can config taskflow worker run in which sidekiq queue(default is `default`), forexample in `config/environments/production.rb`:
+```ruby
+Taskflow.configure do |config|
+    config.worker_options = { queue: 'workflow' }
+end
+```
+
 #### 1. launch taskflow
 ```ruby
 # the params would be set as taskflow's input field
