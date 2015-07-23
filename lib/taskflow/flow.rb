@@ -46,28 +46,6 @@ class Taskflow::Flow
         self.tasks.in(state: ['running','paused'])
     end
 
-    # opts support :name,:params
-    def run(klass,opts={})
-        obj = {
-            klass: klass.to_s,
-            name: opts[:name] || klass.to_s,
-            input: opts[:params],
-            index: self.tasks.size + 1
-        }
-        task = klass.create obj.select{|k,v| v }
-        if opts[:before]
-            task.downstream << opts[:before]
-        end
-        if opts[:after]
-            task.upstream << opts[:after]
-        end
-        if opts[:before].nil? && opts[:after].nil? && self.tasks.last
-            self.tasks.last.downstream << task
-        end
-        self.tasks << task
-        task
-    end
-
     def stop!(user_id=nil)
         percent = self.tasks.map(&:progress).sum / self.tasks.size
         self.update_attributes! progress: percent,halt_by: user_id,ended_at: Time.now, state: 'stopped',result: 'warning'
@@ -94,10 +72,14 @@ class Taskflow::Flow
     end
 
     private
+
     def configure_tasks
         begin
+            @task_list = []
             configure
             sort_index  1,[]
+            TaskFlow::Task.collection.insert @task_list
+            @task_list = nil
         rescue=>exception
             self.destroy
             raise exception
@@ -105,12 +87,62 @@ class Taskflow::Flow
         reload
     end
 
+    # opts support :name,:params
+    def run(klass,opts={})
+        task_data = {
+            klass: klass.to_s,
+            name: opts[:name] || klass.to_s,
+            input: opts[:params],
+            index: @task_list.size + 1,
+            _type: klass.to_s,
+            state: 'pending',
+            output: {},
+            input: {},
+            progress: 0,
+            data: {},
+            flow_id: self.id,
+            _id: BSON::ObjectId.new,
+            downstream_ids: [],
+            upstream_ids: []
+        }.select{|k,v| v }
+        if opts[:before]
+            if opts[:before].is_a? Array
+                opts[:before].flatten!
+                opts[:before].each do |b|
+                    b[:upstream_ids] << task_data[:_id]
+                    task_data[:downstream_ids]  << b[:_id]
+                end
+            else
+                task_data[:downstream_ids]  << opts[:before][:_id]
+                opts[:before][:upstream_ids] << task_data[:_id]
+            end
+        end
+        if opts[:after]
+            if opts[:after].is_a? Array
+                opts[:after].flatten!
+                opts[:after].each do |a|
+                    task_data[:upstream_ids]  << a[:_id]
+                    a[:downstream_ids] << task_data[:_id]
+                end
+            else
+                task_data[:upstream_ids]  << opts[:after][:_id]
+                opts[:after][:downstream_ids] << task_data[:id]
+            end
+        end
+        if opts[:before].nil? && opts[:after].nil? && @task_list.last
+            @task_list.last[:downstream_ids]  << task_data
+            task_data[:upstream_ids] << @task_list.last[:_id]
+        end
+        @task_list << task_data
+        task_data
+    end
+
     def sort_index(i,scanned)
-        queue = self.tasks.nin(id: scanned).select{|t| t.upstream.empty? || t.upstream.all?{|upt| scanned.include?(upt.id.to_s)}}
+        queue = @task_list.select{|t| !scanned.include?(t[:_id]) && (t[:upstream_ids].nil? || t[:upstream_ids].empty? || t[:upstream_ids].all?{|uid| scanned.include?(uid)}) }
         return if queue.empty?
         queue.each do |task|
-            task.update_attributes index: i
-            scanned << task.id.to_s
+            task[:index] = i
+            scanned << task[:_id]
         end
         sort_index i + 1,scanned
     end
