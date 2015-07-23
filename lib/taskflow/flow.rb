@@ -92,12 +92,11 @@ class Taskflow::Flow
         task_data = {
             klass: klass.to_s,
             name: opts[:name] || klass.to_s,
-            input: opts[:params],
+            input: opts[:params] || {},
             index: @task_list.size + 1,
             _type: klass.to_s,
             state: 'pending',
             output: {},
-            input: {},
             progress: 0,
             data: {},
             flow_id: self.id,
