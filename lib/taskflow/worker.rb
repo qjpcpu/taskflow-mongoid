@@ -69,9 +69,9 @@ class Taskflow::Worker
             flow.state = 'stopped'
         elsif flow.tasks.all?{|t| %w(stopped skipped).include? t.state }
             flow.state = 'stopped'
-        elsif flow.tasks.any?{|t| t.state == 'paused' }
+        elsif  paused_task = flow.tasks.find_by(state: 'paused')
             flow.state = 'paused'
-            flow.result = flow.tasks.find_by(state: 'paused').result
+            flow.result = paused_task.result
         else
             flow.state = 'running'
         end
