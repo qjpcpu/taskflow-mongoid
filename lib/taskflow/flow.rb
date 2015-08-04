@@ -125,7 +125,7 @@ class Taskflow::Flow
                 end
             else
                 task_data[:upstream_ids]  << opts[:after][:_id]
-                opts[:after][:downstream_ids] << task_data[:id]
+                opts[:after][:downstream_ids] << task_data[:_id]
             end
         end
         if opts[:before].nil? && opts[:after].nil? && @task_list.last
